@@ -1,5 +1,6 @@
 #ifndef __SHOW_H
 #define __SHOW_H
+
 #include "sys.h"
 #include "oled.h"
 #include "system.h"
@@ -12,4 +13,5 @@ void APP_Show(void);
 void OLED_ShowCheckConfirming(void);
 void OLED_ShowChecking(void);
 void OLED_ShowCheckResult(void);
+
 #endif

@@ -1,5 +1,6 @@
 #ifndef __BALANCE_H
-#define __BALANCE_H			  	 
+#define __BALANCE_H	
+
 #include "sys.h"
 #include "system.h"
 
@@ -12,8 +13,18 @@
 #define Y_PARAMETER    (0.5f)    
 #define L_PARAMETER    (1.0f)
 
-extern short test_num;
+typedef struct {
+    int start_time;
+    int need_time;
+    uint8_t enable;
+    short distance; // m
+    float x_speed;    // m/s
+    float y_speed;    // m/s
+    float z_speed;    // m/s
+} Action;
+
 extern int robot_mode_check_flag;
+
 void Balance_task(void *pvParameters);
 void Set_Pwm(int motor_a,int motor_b,int motor_c,int motor_d,int servo);
 void Limit_Pwm(int amplitude);
@@ -28,11 +39,13 @@ int Incremental_PI_D (float Encoder,float Target);
 void Get_RC(void);
 void Remote_Control(void);
 void Drive_Motor(float Vx,float Vy,float Vz);
-void Key(void);
+uint8_t Key(void);
 void Get_Velocity_Form_Encoder(void);
 void Smooth_control(float vx,float vy,float vz);
 void PS2_control(void);
 float float_abs(float insert);
 void robot_mode_check(void);
+void cheak_time(Action *dst);
+
 #endif  
 

@@ -24,6 +24,7 @@ void data_task(void *pvParameters)
 			//对要进行发送的数据进行赋值
 			data_transition(); 
 			USART1_SEND();     //Serial port 1 sends data //串口1发送数据
+            //printf("Encoder = %f \r\n", MOTOR_A.Encoder > 0 ? MOTOR_A.Encoder : 0);
 			//USART3_SEND();     //Serial port 3 (ROS) sends data  //串口3(ROS)发送数据
 			USART5_SEND();		 //Serial port 5 sends data //串口5发送数据
 			//CAN_SEND();        //CAN send data //CAN发送数据	
@@ -917,8 +918,20 @@ u8 Check_Sum(unsigned char Count_Number,unsigned char Mode)
 	return check_sum;
 }
 
+//重定向c库函数printf到串口，重定向后可使用printf函数
+ int fputc(int ch, FILE *f)
+ {
+     taskENTER_CRITICAL();           //Enter the critical area //进入临界区
+    
+ 	/* 发送一个字节数据到串口 */
+     USART_SendData(USART1, (uint8_t) ch);
+    
+     /* 等待发送完毕 */
+     while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
 
+     taskEXIT_CRITICAL();            //Exit the critical section//退出临界区
 
-
+     return (ch);
+ }
 
 
