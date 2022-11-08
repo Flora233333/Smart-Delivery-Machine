@@ -61,7 +61,7 @@ Output  : none
 返回  值：无
 **************************************************************************/
 uint8_t flag = 0;
-uint8_t wait = 50;
+uint8_t wait = 20;
 uint32_t mode = 0;
 
 void Balance_task(void *pvParameters)
@@ -85,12 +85,12 @@ void Balance_task(void *pvParameters)
 
             flag = Key();
 
-//            if(flag > 0) {
-//                mode++;
-//                flag = 0;
-//            }
+           if(flag > 0) {
+               mode++;
+               flag = 0;
+           }
 
-            if(flag > 0) 
+            if(mode == 1) 
             {
                 dst.enable = 1;
                 dst.distance = 1;
@@ -98,24 +98,24 @@ void Balance_task(void *pvParameters)
                 dst.y_speed = 0;
                 dst.z_speed = 0;
 			    dst.start_time = Time_count;
-                dst.need_time = (int)((float)dst.distance / dst.x_speed) * 100;
+                dst.need_time = (int)((dst.distance / dst.x_speed) * 100);
                 mode++;
                 flag = 0;
             }
 
-            // if(mode == 3) 
-            // {
-            //     if(dst.start_time + dst.need_time + wait < Time_count) {
-            //         dst.enable = 1;
-            //         dst.distance = 1;
-            //         dst.x_speed = 0;
-            //         dst.y_speed = 0.4;
-            //         dst.z_speed = 0;
-            //         dst.start_time = Time_count;
-            //         dst.need_time = (int)((float)dst.distance / dst.y_speed) * 100;
-            //         mode++;
-            //     }
-            // }
+            if(mode == 3) 
+            {
+                if(dst.start_time + dst.need_time + wait < Time_count) {
+                    dst.enable = 1;
+                    dst.distance = 1;
+                    dst.x_speed = 0;
+                    dst.y_speed = 0.4;
+                    dst.z_speed = 0;
+                    dst.start_time = Time_count;
+                    dst.need_time = (int)((dst.distance / dst.y_speed) * 100);
+                    mode++;
+                }
+            }
             
 			cheak_time(&dst);
 
@@ -133,7 +133,6 @@ void Balance_task(void *pvParameters)
             }
             else {
                 Set_Pwm(0, 0, 0, 0, 0);
-
             }
 
 		// 	if(Check==0) //If self-check mode is not enabled //如果没有启动自检模式
@@ -238,13 +237,13 @@ float PID_TurnLeft(Turn *turn)
 **************************************************************************/
 
 void cheak_time(Action *dst) {
-    if(((Time_count - dst->start_time) >= dst->need_time)) {
+    if((Time_count - dst->start_time) >= dst->need_time && dst->enable == 1) {
         flag = 0;
         dst->x_speed = 0;
         dst->y_speed = 0;
         dst->z_speed = 0;
-        //mode++;
-        //dst->enable = 0;
+        mode++;
+        dst->enable = 0;
         Drive_Motor(0, 0, 0);
     }
 }

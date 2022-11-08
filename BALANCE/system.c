@@ -21,7 +21,7 @@ All rights reserved
 
 //Robot software fails to flag bits
 //机器人软件失能标志位
-u8 Flag_Stop=1;   
+u8 Flag_Stop = 1;   
 
 //The ADC value is variable in segments, depending on the number of car models. Currently there are 6 car models
 //ADC值分段变量，取决于小车型号数量，目前有6种小车型号

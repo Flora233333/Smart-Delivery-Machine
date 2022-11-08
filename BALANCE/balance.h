@@ -17,7 +17,7 @@ typedef struct {
     int start_time;
     int need_time;
     uint8_t enable;
-    short distance; // m
+    float distance; // m
     float x_speed;    // m/s
     float y_speed;    // m/s
     float z_speed;    // m/s
