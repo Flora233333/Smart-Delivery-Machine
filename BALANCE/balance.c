@@ -1,14 +1,77 @@
 #include "balance.h"
 
-__IO uint32_t Time_count=0; //Time variable //计时变量
+__IO int32_t Time_count = 0; //Time variable //计时变量
+__IO static uint16_t Action_num = 0; 
+__IO static uint16_t Action_cnt = 0;
+__IO static uint16_t Running = 0;
 
-// Robot mode is wrong to detect flag bits
-//机器人模式是否出错检测标志位
-int robot_mode_check_flag=0; 
-
-Action dst = {0,0,0,0,0,0,0};
+Action dst[5];
 
 Encoder OriginalEncoder; //Encoder raw data //编码器原始数据     
+
+/**************************************************************************
+Function: FreerTOS task, core motion control task
+Input   : none
+Output  : none
+函数功能：FreeRTOS任务，核心运动控制任务
+入口参数：无
+返回  值：无
+**************************************************************************/
+uint8_t flag = 0;
+uint8_t wait = 60;
+uint8_t mode = 0;
+
+void Balance_task(void *pvParameters)
+{ 
+	u32 lastWakeTime = getSysTickCnt();
+
+    Action_init(4);
+    
+    Running = 0;
+    while(1)
+    {	
+        // This task runs at a frequency of 100Hz (10ms control once)
+        //此任务以100Hz的频率运行（10ms控制一次）
+        vTaskDelayUntil(&lastWakeTime, F2T(RATE_100_HZ)); 
+
+        lastWakeTime = getSysTickCnt();
+
+        //Time count is no longer needed after 30 seconds
+        //时间计数，30秒后不再需要, 加一次10ms, 当运行时基用
+        Time_count++;
+        if(Time_count >= 10000000L) // 100分钟为一个运行周期
+            Time_count = 0;
+
+        flag = Key();
+
+        if(flag > 0) {
+            mode++;
+            flag = 0;
+        }
+        
+        cheak_time();
+
+        //获取编码器数据，并转换位国际单位m/s
+        Get_Velocity_Form_Encoder();
+
+        Drive_Motor(dst[Action_cnt].x_speed, dst[Action_cnt].y_speed, dst[Action_cnt].z_speed);  
+
+        if(Turn_Off(Voltage) == 0) 
+        {
+            MOTOR_A.Motor_Pwm = Incremental_PI_A(MOTOR_A.Encoder, MOTOR_A.Target);
+            MOTOR_B.Motor_Pwm = Incremental_PI_B(MOTOR_B.Encoder, MOTOR_B.Target);
+            MOTOR_C.Motor_Pwm = Incremental_PI_C(MOTOR_C.Encoder, MOTOR_C.Target);
+            MOTOR_D.Motor_Pwm = Incremental_PI_D(MOTOR_D.Encoder, MOTOR_D.Target);
+            Set_Pwm( MOTOR_A.Motor_Pwm, -MOTOR_B.Motor_Pwm, -MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0); 
+        }
+        else 
+        {
+            Set_Pwm(0, 0, 0, 0, 0);
+        }
+
+	}  
+}
+
 /**************************************************************************
 Function: The inverse kinematics solution is used to calculate the target speed of each wheel according to the target speed of three axes
 Input   : X and Y, Z axis direction of the target movement speed
@@ -20,29 +83,14 @@ Output  : none
 void Drive_Motor(float Vx,float Vy,float Vz)
 {
 		float amplitude = 3.5; //Wheel target speed limit //车轮目标速度限幅
-	
-	  //Speed smoothing is enabled when moving the omnidirectional trolley
-	  //全向移动小车才开启速度平滑处理
-	//   if(Car_Mode==Mec_Car||Car_Mode==Omni_Car)
-	// 	{
-	// 		Smooth_control(Vx,Vy,Vz); //Smoothing the input speed //对输入速度进行平滑处理
-  
-    //   //Get the smoothed data 
-	// 		//获取平滑处理后的数据			
-	// 		Vx=smooth_control.VX;     
-	// 		Vy=smooth_control.VY;
-	// 		Vz=smooth_control.VZ;
-	// 	}
-		
 
-	  //麦克纳姆轮小车
-	    if (Car_Mode == Mec_Car) 
+	    if (Running == 1) 
         {
 			//Inverse kinematics //运动学逆解
-			MOTOR_A.Target   = +Vy+Vx-Vz*(Axle_spacing+Wheel_spacing);
-			MOTOR_B.Target   = -Vy+Vx-Vz*(Axle_spacing+Wheel_spacing);
-			MOTOR_C.Target   = +Vy+Vx+Vz*(Axle_spacing+Wheel_spacing);
-			MOTOR_D.Target   = -Vy+Vx+Vz*(Axle_spacing+Wheel_spacing);
+			MOTOR_A.Target = +Vy+Vx-Vz*(Axle_spacing+Wheel_spacing);
+			MOTOR_B.Target = -Vy+Vx-Vz*(Axle_spacing+Wheel_spacing);
+			MOTOR_C.Target = +Vy+Vx+Vz*(Axle_spacing+Wheel_spacing);
+			MOTOR_D.Target = -Vy+Vx+Vz*(Axle_spacing+Wheel_spacing);
 		
 			//Wheel (motor) target speed limit //车轮(电机)目标速度限幅
 			MOTOR_A.Target = target_limit_float(MOTOR_A.Target,-amplitude,amplitude); 
@@ -50,139 +98,99 @@ void Drive_Motor(float Vx,float Vy,float Vz)
 			MOTOR_C.Target = target_limit_float(MOTOR_C.Target,-amplitude,amplitude); 
 			MOTOR_D.Target = target_limit_float(MOTOR_D.Target,-amplitude,amplitude); 
 		} 
+        else
+        {
+            MOTOR_A.Target = 0;
+            MOTOR_B.Target = 0;
+            MOTOR_C.Target = 0;
+            MOTOR_D.Target = 0;
+        }
 
 }
+
+void Action_init(uint8_t num) {
+    uint8_t i = 0;
+    uint8_t static flag = 0;
+
+    if(flag == 0) //只做一遍
+    {
+        Action_num = num;
+
+        for (i = 0; i < 5; i++)
+        {
+            dst[i].enable = 0;
+        }
+
+        dst[0].enable = 1;
+        dst[0].distance = 0.5;
+        dst[0].x_speed = 0.4;
+        dst[0].y_speed = 0;
+        dst[0].z_speed = 0;
+        dst[0].need_time = (int)((dst[0].distance / dst[0].x_speed) * 100);
+        
+        dst[1].enable = 1;
+        dst[1].distance = 1.54;
+        dst[1].x_speed = 0;
+        dst[1].y_speed = 0;
+        dst[1].z_speed = 2;
+        dst[1].need_time = (int)((dst[1].distance / dst[1].z_speed) * 100);
+
+        dst[2].enable = 1;
+        dst[2].distance = 1.54 * 2;
+        dst[2].x_speed = 0;
+        dst[2].y_speed = 0;
+        dst[2].z_speed = 2;
+        dst[2].need_time = (int)((dst[2].distance / dst[2].z_speed) * 100);
+
+        dst[3].enable = 1;
+        dst[3].distance = 0.5;
+        dst[3].x_speed = 0;
+        dst[3].y_speed = 0.4;
+        dst[3].z_speed = 0;
+        dst[3].need_time = (int)((dst[3].distance / dst[3].y_speed) * 100);
+        flag++;
+    }
+    else
+        return;
+}
+
 /**************************************************************************
-Function: FreerTOS task, core motion control task
-Input   : none
-Output  : none
-函数功能：FreeRTOS任务，核心运动控制任务
-入口参数：无
+函数功能：检测动作是否完成
+入口参数：
 返回  值：无
 **************************************************************************/
-uint8_t flag = 0;
-uint8_t wait = 20;
-uint32_t mode = 0;
+void cheak_time(void) {
+    static int32_t time = 0;
 
-void Balance_task(void *pvParameters)
-{ 
-	  u32 lastWakeTime = getSysTickCnt();
-
-    while(1)
-    {	
-			// This task runs at a frequency of 100Hz (10ms control once)
-			//此任务以100Hz的频率运行（10ms控制一次）
-			vTaskDelayUntil(&lastWakeTime, F2T(RATE_100_HZ)); 
-
-            lastWakeTime = getSysTickCnt();
-
-			//Time count is no longer needed after 30 seconds
-			//时间计数，30秒后不再需要, 加一次10ms, 当运行时基用
-			//if(Time_count<3000)Time_count++;
-            Time_count++;
-            if(Time_count >= 10000000L) // 100分钟为一个运行周期
-                Time_count = 0;
-
-            flag = Key();
-
-           if(flag > 0) {
-               mode++;
-               flag = 0;
-           }
-
-            if(mode == 1) 
+    if(mode == 1) 
+    {
+        if(dst[Action_cnt].enable == 1)
+        {
+            if(Running == 0)
             {
-                dst.enable = 1;
-                dst.distance = 1;
-                dst.x_speed = 0.4;
-                dst.y_speed = 0;
-                dst.z_speed = 0;
-			    dst.start_time = Time_count;
-                dst.need_time = (int)((dst.distance / dst.x_speed) * 100);
-                mode++;
-                flag = 0;
-            }
-
-            if(mode == 3) 
-            {
-                if(dst.start_time + dst.need_time + wait < Time_count) {
-                    dst.enable = 1;
-                    dst.distance = 1;
-                    dst.x_speed = 0;
-                    dst.y_speed = 0.4;
-                    dst.z_speed = 0;
-                    dst.start_time = Time_count;
-                    dst.need_time = (int)((dst.distance / dst.y_speed) * 100);
-                    mode++;
+                if(Time_count - time >= wait) 
+                {
+                    dst[Action_cnt].start_time = Time_count;;
+                    Running = 1;
                 }
             }
-            
-			cheak_time(&dst);
-
-            //获取编码器数据，并转换位国际单位m/s
-            Get_Velocity_Form_Encoder();
-
-            Drive_Motor(dst.x_speed, dst.y_speed, dst.z_speed);  
-
-			if(Turn_Off(Voltage) == 0) {
-                MOTOR_A.Motor_Pwm = Incremental_PI_A(MOTOR_A.Encoder, MOTOR_A.Target);
-                MOTOR_B.Motor_Pwm = Incremental_PI_B(MOTOR_B.Encoder, MOTOR_B.Target);
-                MOTOR_C.Motor_Pwm = Incremental_PI_C(MOTOR_C.Encoder, MOTOR_C.Target);
-                MOTOR_D.Motor_Pwm = Incremental_PI_D(MOTOR_D.Encoder, MOTOR_D.Target);
-                Set_Pwm( MOTOR_A.Motor_Pwm, -MOTOR_B.Motor_Pwm, -MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0); 
+            else
+            {
+                if((Time_count - dst[Action_cnt].start_time) >= dst[Action_cnt].need_time)
+                {
+                    Running = 0;
+                    Action_cnt++;  
+                    time = Time_count;
+                }
             }
-            else {
-                Set_Pwm(0, 0, 0, 0, 0);
-            }
-
-		// 	if(Check==0) //If self-check mode is not enabled //如果没有启动自检模式
-		// 	{
-		// 		if      (APP_ON_Flag)      Get_RC();         //Handle the APP remote commands //处理APP遥控命令
-		// 		else if (PS2_ON_Flag)      PS2_control();    //Handle PS2 controller commands //处理PS2手柄控制命令
-				
-		// 		//CAN, Usart 1, Usart 3, Uart5 control can directly get the three axis target speed, 
-		// 		//without additional processing
-		// 		//CAN、串口1、串口3(ROS)、串口5控制直接得到三轴目标速度，无须额外处理(m/s)
-		// 		//else                      Drive_Motor(Move_X, Move_Y, Move_Z); //赋值MOTOR_X.Target
-				
-		// 		//Click the user button to update the gyroscope zero
-		// 		//单击用户按键更新陀螺仪零点
-		// 		//Key(); 
-				
-		// 		//If there is no abnormity in the battery voltage, and the enable switch is in the ON position,
-        // //and the software failure flag is 0
-		// 		//如果电池电压不存在异常，而且使能开关在ON档位，而且软件失能标志位为0
-		// 		if(Turn_Off(Voltage)==0) 
-		// 		 { 			
-        //    //Speed closed-loop control to calculate the PWM value of each motor, 
-		// 			 //PWM represents the actual wheel speed					 
-		// 			 //速度闭环控制计算各电机PWM值，PWM代表车轮实际转速
-		// 			 MOTOR_A.Motor_Pwm=Incremental_PI_A(MOTOR_A.Encoder, MOTOR_A.Target);
-		// 			 MOTOR_B.Motor_Pwm=Incremental_PI_B(MOTOR_B.Encoder, MOTOR_B.Target);
-		// 			 MOTOR_C.Motor_Pwm=Incremental_PI_C(MOTOR_C.Encoder, MOTOR_C.Target);
-		// 			 MOTOR_D.Motor_Pwm=Incremental_PI_D(MOTOR_D.Encoder, MOTOR_D.Target);
-						 
-		// 			 Limit_Pwm(16700);
-					 
-		// 			 //Set different PWM control polarity according to different car models
-		// 			 //根据不同小车型号设置不同的PWM控制极性
-		// 			 switch(Car_Mode)
-		// 			 {
-		// 					case Mec_Car:       Set_Pwm( MOTOR_A.Motor_Pwm, -MOTOR_B.Motor_Pwm, -MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0    ); break; //Mecanum wheel car       //麦克纳姆轮小车
-		// 					case Omni_Car:      Set_Pwm(-MOTOR_A.Motor_Pwm,  MOTOR_B.Motor_Pwm, -MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0    ); break; //Omni car                //全向轮小车
-		// 					case Akm_Car:       Set_Pwm( MOTOR_A.Motor_Pwm,  MOTOR_B.Motor_Pwm,  MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, Servo); break; //Ackermann structure car //阿克曼小车
-		// 					case Diff_Car:      Set_Pwm( MOTOR_A.Motor_Pwm,  MOTOR_B.Motor_Pwm,  MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0    ); break; //Differential car        //两轮差速小车
-		// 					case FourWheel_Car: Set_Pwm( MOTOR_A.Motor_Pwm, -MOTOR_B.Motor_Pwm, -MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0    ); break; //FourWheel car           //四驱车 
-		// 					case Tank_Car:      Set_Pwm( MOTOR_A.Motor_Pwm,  MOTOR_B.Motor_Pwm,  MOTOR_C.Motor_Pwm, MOTOR_D.Motor_Pwm, 0    ); break; //Tank Car                //履带车
-		// 			 }
-		// 		 }
-		// 		 //If Turn_Off(Voltage) returns to 1, the car is not allowed to move, and the PWM value is set to 0
-		// 		 //如果Turn_Off(Voltage)返回值为1，不允许控制小车进行运动，PWM值设置为0
-		// 		 else	Set_Pwm(0,0,0,0,0); 
-		// 	 }	
-		 }  
+        }
+        else
+        {
+            mode = 0;
+            Action_cnt = 0;
+        }
+    }
 }
-
 /**************************************************************************
 函数功能：左转，基于编码器
 入口参数：Turn结构体
@@ -229,26 +237,6 @@ float PID_TurnLeft(Turn *turn)
 
 //     return out;
 // }
-
-/**************************************************************************
-函数功能：前进的距离
-入口参数：
-返回  值：无
-**************************************************************************/
-
-void cheak_time(Action *dst) {
-    if((Time_count - dst->start_time) >= dst->need_time && dst->enable == 1) {
-        flag = 0;
-        dst->x_speed = 0;
-        dst->y_speed = 0;
-        dst->z_speed = 0;
-        mode++;
-        dst->enable = 0;
-        Drive_Motor(0, 0, 0);
-    }
-}
-
-
 
 /**************************************************************************
 Function: Assign a value to the PWM register to control wheel speed and direction
@@ -300,7 +288,8 @@ void Limit_Pwm(int amplitude)
 	    MOTOR_B.Motor_Pwm=target_limit_float(MOTOR_B.Motor_Pwm,-amplitude,amplitude);
 		  MOTOR_C.Motor_Pwm=target_limit_float(MOTOR_C.Motor_Pwm,-amplitude,amplitude);
 	    MOTOR_D.Motor_Pwm=target_limit_float(MOTOR_D.Motor_Pwm,-amplitude,amplitude);
-}	    
+}	 
+
 /**************************************************************************
 Function: Limiting function
 Input   : Value
@@ -350,6 +339,7 @@ u8 Turn_Off( int voltage)
 			temp=0;
 			return temp;			
 }
+
 /**************************************************************************
 Function: Calculate absolute value
 Input   : long int
@@ -365,34 +355,17 @@ u32 myabs(long int a)
 	  else temp=a;
 	  return temp;
 }
-/**************************************************************************
-Function: Incremental PI controller
-Input   : Encoder measured value (actual speed), target speed
-Output  : Motor PWM
-According to the incremental discrete PID formula
-pwm+=Kp[e（k）-e(k-1)]+Ki*e(k)+Kd[e(k)-2e(k-1)+e(k-2)]
-e(k) represents the current deviation
-e(k-1) is the last deviation and so on
-PWM stands for incremental output
-In our speed control closed loop system, only PI control is used
-pwm+=Kp[e（k）-e(k-1)]+Ki*e(k)
 
+/**************************************************************************
 函数功能：增量式PI控制器
 入口参数：编码器测量值(实际速度)，目标速度
 返回  值：电机PWM
-根据增量式离散PID公式 
-pwm+=Kp[e（k）-e(k-1)]+Ki*e(k)+Kd[e(k)-2e(k-1)+e(k-2)]
-e(k)代表本次偏差 
-e(k-1)代表上一次的偏差  以此类推 
-pwm代表增量输出
-在我们的速度控制闭环系统里面，只使用PI控制
-pwm+=Kp[e（k）-e(k-1)]+Ki*e(k)
 **************************************************************************/
 int Incremental_PI_A (float Encoder,float Target)
 { 	
 	 static float Bias,Pwm,Last_bias;
 	 Bias = Target - Encoder; //Calculate the deviation //计算偏差
-	 Pwm+=Velocity_KP*(Bias-Last_bias)+Velocity_KI*Bias; 
+	 Pwm+=Velocity_KP*(Bias-Last_bias)+1800*Bias; 
 	 if(Pwm>16700)Pwm=16700;
 	 if(Pwm<-16700)Pwm=-16700;
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
@@ -402,7 +375,7 @@ int Incremental_PI_B (float Encoder,float Target)
 {  
 	 static float Bias, Pwm, Last_bias;
 	 Bias = Target - Encoder; //Calculate the deviation //计算偏差
-	 Pwm += Velocity_KP * (Bias - Last_bias) + 1400 * Bias;  
+	 Pwm += Velocity_KP * (Bias - Last_bias) + 1600 * Bias;  
 	 if(Pwm > 16700) Pwm = 16700;
 	 if(Pwm < -16700) Pwm = -16700;
 	 Last_bias = Bias; //Save the last deviation //保存上一次偏差 
@@ -412,7 +385,7 @@ int Incremental_PI_C (float Encoder,float Target)
 {  
 	 static float Bias,Pwm,Last_bias;
 	 Bias=Target-Encoder; //Calculate the deviation //计算偏差
-	 Pwm+=Velocity_KP*(Bias-Last_bias)+Velocity_KI*Bias; 
+	 Pwm+=Velocity_KP*(Bias-Last_bias)+1500*Bias; 
 	 if(Pwm>16700)Pwm=16700;
 	 if(Pwm<-16700)Pwm=-16700;
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
@@ -428,6 +401,7 @@ int Incremental_PI_D (float Encoder,float Target)
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
 	 return Pwm; 
 }
+
 /**************************************************************************
 Function: Processes the command sent by APP through usart 2
 Input   : none
@@ -542,17 +516,6 @@ void PS2_control(void)
 		{
 			Move_Z=Move_Z*RC_Velocity/500;
 		}	
-		else if(Car_Mode==Akm_Car)
-		{
-			//Ackermann structure car is converted to the front wheel steering Angle system target value, and kinematics analysis is pearformed
-		  //阿克曼结构小车转换为前轮转向角度
-			Move_Z=Move_Z*2/9;
-		}
-		else if(Car_Mode==Diff_Car||Car_Mode==Tank_Car||Car_Mode==FourWheel_Car)
-		{
-			if(Move_X<0) Move_Z=-Move_Z; //The differential control principle series requires this treatment //差速控制原理系列需要此处理
-			Move_Z=Move_Z*RC_Velocity/500;
-		}	
 		 
 	  //Unit conversion, mm/s -> m/s
     //单位转换，mm/s -> m/s	
@@ -577,12 +540,9 @@ uint8_t Key(void)
 {	
 	u8 tmp = 0;
 	tmp=click_N_Double_MPU6050(50); 
-	// if(tmp==2) {
-    //     memcpy(Deviation_gyro,Original_gyro,sizeof(gyro));
-    //     memcpy(Deviation_accel,Original_accel,sizeof(accel));
-    // }
     return tmp;
 }
+
 /**************************************************************************
 Function: Read the encoder value and calculate the wheel speed, unit m/s
 Input   : none
@@ -622,34 +582,7 @@ void Get_Velocity_Form_Encoder(void)
 		MOTOR_C.Encoder= Encoder_C_pr*CONTROL_FREQUENCY*Wheel_perimeter/Encoder_precision; 
 		MOTOR_D.Encoder= Encoder_D_pr*CONTROL_FREQUENCY*Wheel_perimeter/Encoder_precision; 
 }
-/**************************************************************************
-Function: Smoothing the three axis target velocity
-Input   : Three-axis target velocity
-Output  : none
-函数功能：对三轴目标速度做平滑处理
-入口参数：三轴目标速度
-返回  值：无
-**************************************************************************/
-void Smooth_control(float vx,float vy,float vz)
-{
-	float step=0.01;
 
-	if	   (vx>0) 	smooth_control.VX+=step;
-	else if(vx<0)		smooth_control.VX-=step;
-	else if(vx==0)	smooth_control.VX=smooth_control.VX*0.9f;
-	
-	if	   (vy>0)   smooth_control.VY+=step;
-	else if(vy<0)		smooth_control.VY-=step;
-	else if(vy==0)	smooth_control.VY=smooth_control.VY*0.9f;
-	
-	if	   (vz>0) 	smooth_control.VZ+=step;
-	else if(vz<0)		smooth_control.VZ-=step;
-	else if(vz==0)	smooth_control.VZ=smooth_control.VZ*0.9f;
-	
-	smooth_control.VX=target_limit_float(smooth_control.VX,-float_abs(vx),float_abs(vx));
-	smooth_control.VY=target_limit_float(smooth_control.VY,-float_abs(vy),float_abs(vy));
-	smooth_control.VZ=target_limit_float(smooth_control.VZ,-float_abs(vz),float_abs(vz));
-}
 /**************************************************************************
 Function: Floating-point data calculates the absolute value
 Input   : float
@@ -663,20 +596,4 @@ float float_abs(float insert)
 	if(insert>=0) return insert;
 	else return -insert;
 }
-/**************************************************************************
-Function: Prevent the potentiometer to choose the wrong mode, resulting in initialization error caused by the motor spinning.Out of service
-Input   : none
-Output  : none
-函数功能：防止电位器选错模式，导致初始化出错引发电机乱转。已停止使用
-入口参数：无
-返回  值：无
-**************************************************************************/
-void robot_mode_check(void)
-{
-	static u8 error=0;
 
-	if(abs(MOTOR_A.Motor_Pwm)>2500||abs(MOTOR_B.Motor_Pwm)>2500||abs(MOTOR_C.Motor_Pwm)>2500||abs(MOTOR_D.Motor_Pwm)>2500)   error++;
-	//If the output is close to full amplitude for 6 times in a row, it is judged that the motor rotates wildly and makes the motor incapacitated
-	//如果连续6次接近满幅输出，判断为电机乱转，让电机失能	
-	if(error>6) EN=0,Flag_Stop=1,robot_mode_check_flag=1;  
-}

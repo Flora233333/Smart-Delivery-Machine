@@ -45,7 +45,8 @@ void Smooth_control(float vx,float vy,float vz);
 void PS2_control(void);
 float float_abs(float insert);
 void robot_mode_check(void);
-void cheak_time(Action *dst);
+void cheak_time(void);
+void Action_init(uint8_t num);
 
 #endif  
 
