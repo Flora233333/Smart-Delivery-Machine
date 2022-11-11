@@ -316,22 +316,16 @@ void CAN1_RX0_IRQHandler(void)
  	CAN1_Rx_Msg(0,&id,&ide,&rtr,&len,temp_rxbuf);
 	if(id==0x181)
 	{
-		float Vz;
+
 		CAN_ON_Flag=1, PS2_ON_Flag=0,Remote_ON_Flag=0,APP_ON_Flag=0,Usart1_ON_Flag=0,Usart5_ON_Flag=0;
 
 		//Calculate the three-axis target velocity, unit: m/s
 		//计算三轴目标速度，单位：m/s
 		Move_X=((float)((short)((temp_rxbuf[0]<<8)+(temp_rxbuf[1]))))/1000; 
 		Move_Y=((float)((short)((temp_rxbuf[2]<<8)+(temp_rxbuf[3]))))/1000;
-		Vz    =((float)((short)((temp_rxbuf[4]<<8)+(temp_rxbuf[5]))))/1000;
-		if(Car_Mode==Akm_Car)
-		{
-			Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
-		}
-		else
-		{
-			Move_Z=((short)((temp_rxbuf[4]<<8)+(temp_rxbuf[5])))/1000;
-		}
+		
+
+		Move_Z=((short)((temp_rxbuf[4]<<8)+(temp_rxbuf[5])))/1000;
 	}
 }
 #endif

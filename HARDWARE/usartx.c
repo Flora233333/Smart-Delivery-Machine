@@ -1,6 +1,13 @@
 #include "usartx.h"
 SEND_DATA Send_Data;
 RECEIVE_DATA Receive_Data;
+
+__IO uint8_t sensor_flag = 0;
+__IO uint8_t next_location = 0;
+__IO uint8_t color = 0;
+__IO uint8_t QR_code[3] = {0};
+
+
 extern int Time_count;
 
 /**************************************************************************
@@ -23,10 +30,10 @@ void data_task(void *pvParameters)
 			//Assign the data to be sent
 			//对要进行发送的数据进行赋值
 			data_transition(); 
-			USART1_SEND();     //Serial port 1 sends data //串口1发送数据
+			//USART1_SEND();     //Serial port 1 sends data //串口1发送数据
             //printf("Encoder = %f \r\n", MOTOR_A.Encoder > 0 ? MOTOR_A.Encoder : 0);
 			//USART3_SEND();     //Serial port 3 (ROS) sends data  //串口3(ROS)发送数据
-			USART5_SEND();		 //Serial port 5 sends data //串口5发送数据
+			//USART5_SENDOK();		 //Serial port 5 sends data //串口5发送数据
 			//CAN_SEND();        //CAN send data //CAN发送数据	
 		}
 }
@@ -46,44 +53,11 @@ void data_transition(void)
 	//According to different vehicle types, different kinematics algorithms were selected to carry out the forward kinematics solution, 
 	//and the three-axis velocity was obtained from each wheel velocity
 	//根据不同车型选择不同运动学算法进行运动学正解，从各车轮速度求出三轴速度
-	switch(Car_Mode)
-	{	
-		case Mec_Car:      
-			Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/4)*1000;
-	    Send_Data.Sensor_Str.Y_speed = ((MOTOR_A.Encoder-MOTOR_B.Encoder+MOTOR_C.Encoder-MOTOR_D.Encoder)/4)*1000; 
-	    Send_Data.Sensor_Str.Z_speed = ((-MOTOR_A.Encoder-MOTOR_B.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/4/(Axle_spacing+Wheel_spacing))*1000;         
-		  break; 
-		
-    case Omni_Car:      
-			Send_Data.Sensor_Str.X_speed = ((MOTOR_C.Encoder-MOTOR_B.Encoder)/2/X_PARAMETER)*1000; 
-	    Send_Data.Sensor_Str.Y_speed = ((MOTOR_A.Encoder*2-MOTOR_B.Encoder-MOTOR_C.Encoder)/3)*1000; 
-	    Send_Data.Sensor_Str.Z_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder+MOTOR_C.Encoder)/3/Omni_turn_radiaus)*1000;      
-		  break; 
-    
-		case Akm_Car:  
-			Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder)/2)*1000; 
-			Send_Data.Sensor_Str.Y_speed = 0;
-			Send_Data.Sensor_Str.Z_speed = ((MOTOR_B.Encoder-MOTOR_A.Encoder)/Wheel_spacing)*1000;
-		  break; 
-		
-		case Diff_Car: 
-			Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder)/2)*1000; 
-			Send_Data.Sensor_Str.Y_speed = 0;
-			Send_Data.Sensor_Str.Z_speed = ((MOTOR_B.Encoder-MOTOR_A.Encoder)/Wheel_spacing)*1000;
-			break; 
-		
-		case FourWheel_Car:
-      Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/4)*1000; 
-	    Send_Data.Sensor_Str.Y_speed = 0;
-	    Send_Data.Sensor_Str.Z_speed = ((-MOTOR_B.Encoder-MOTOR_A.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/2/(Axle_spacing+Wheel_spacing))*1000;
-		 break; 
-		
-		case Tank_Car:   
-			Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder)/2)*1000; 
-			Send_Data.Sensor_Str.Y_speed = 0;
-			Send_Data.Sensor_Str.Z_speed = ((MOTOR_B.Encoder-MOTOR_A.Encoder)/(Wheel_spacing)*1000);
-			break; 
-	}
+   
+	Send_Data.Sensor_Str.X_speed = ((MOTOR_A.Encoder+MOTOR_B.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/4)*1000;
+	Send_Data.Sensor_Str.Y_speed = ((MOTOR_A.Encoder-MOTOR_B.Encoder+MOTOR_C.Encoder-MOTOR_D.Encoder)/4)*1000; 
+	Send_Data.Sensor_Str.Z_speed = ((-MOTOR_A.Encoder-MOTOR_B.Encoder+MOTOR_C.Encoder+MOTOR_D.Encoder)/4/(Axle_spacing+Wheel_spacing))*1000;         
+
 	
 	//The acceleration of the triaxial acceleration //加速度计三轴加速度
 	Send_Data.Sensor_Str.Accelerometer.X_data= accel[1]; //The accelerometer Y-axis is converted to the ros coordinate X axis //加速度计Y轴转换到ROS坐标X轴
@@ -143,7 +117,7 @@ void data_transition(void)
 
   //Data check digit calculation, Pattern 1 is a data check
   //数据校验位计算，模式1是发送数据校验
-	Send_Data.buffer[22]=Check_Sum(22,1); 
+	Send_Data.buffer[22]=Check_Sum(22, 1, Send_Data.buffer); 
 	
 	Send_Data.buffer[23]=Send_Data.Sensor_Str.Frame_Tail; //Frame_tail //帧尾
 }
@@ -188,43 +162,32 @@ Output  : none
 入口参数：无
 返回  值：无
 **************************************************************************/
-void USART5_SEND(void)
+void USART5_SENDOK(void)
 {
-  unsigned char i = 0;	
-	for(i=0; i<24; i++)
+    static unsigned char location = 0x01;
+    unsigned char i = 0;
+    u8 sendbuf[11] = {0};
+
+    sendbuf[0] = 0x7B;
+    sendbuf[10] = 0x7D;	
+
+    sendbuf[1] = 0x00;
+    sendbuf[2] = 0x01;
+
+    sendbuf[3] = 0x01; // 已到达位置
+    sendbuf[4] = location++; // 位置代号
+
+    sendbuf[5] = 0x00;
+    sendbuf[6] = 0x00;
+    sendbuf[7] = 0x00;
+    sendbuf[8] = 0x00;
+
+    sendbuf[9] = Check_Sum(9, 1, sendbuf);
+
+	for(i = 0; i < 11; i++)
 	{
-		usart5_send(Send_Data.buffer[i]);
+		usart5_send(sendbuf[i]);
 	}	 
-}
-/**************************************************************************
-Function: CAN sends data
-Input   : none
-Output  : none
-函数功能：CAN发送数据
-入口参数：无
-返 回 值：无
-**************************************************************************/
-void CAN_SEND(void) 
-{
-	u8 CAN_SENT[8],i;
-	
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i];
-	}
-	CAN1_Send_Num(0x101,CAN_SENT);
-	
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i+8];
-	}
-	CAN1_Send_Num(0x102,CAN_SENT);
-	
-	for(i=0;i<8;i++)
-	{
-	  CAN_SENT[i]=Send_Data.buffer[i+16];
-	}
-	CAN1_Send_Num(0x103,CAN_SENT);
 }
 /**************************************************************************
 Function: Serial port 1 initialization
@@ -389,7 +352,7 @@ Output  : none
 **************************************************************************/
 void uart5_init(u32 bound)
 {  	 
-  GPIO_InitTypeDef GPIO_InitStructure;
+    GPIO_InitTypeDef GPIO_InitStructure;
 	USART_InitTypeDef USART_InitStructure;
 	NVIC_InitTypeDef NVIC_InitStructure;
 	
@@ -397,7 +360,7 @@ void uart5_init(u32 bound)
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);	 //Enable the gpio clock  //使能GPIO时钟
 		//PD2 RX
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);	 //Enable the gpio clock  //使能GPIO时钟
-  RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART5, ENABLE); //Enable the Usart clock //使能USART时钟
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART5, ENABLE); //Enable the Usart clock //使能USART时钟
 
 	GPIO_PinAFConfig(GPIOC,GPIO_PinSource12,GPIO_AF_UART5);	
 	GPIO_PinAFConfig(GPIOD,GPIO_PinSource2 ,GPIO_AF_UART5);	 
@@ -454,74 +417,77 @@ int USART1_IRQHandler(void)
 		u8 Usart_Receive;
 		static u8 Count;
 		static u8 rxbuf[11];
-		int check=0,error=1,i;
-		
+		int error = 1;
+		//int i = 0;
+
 		Usart_Receive = USART_ReceiveData(USART1); //Read the data //读取数据
-		if(Time_count<CONTROL_DELAY)
+
+		//if(Time_count < CONTROL_DELAY)
 			// Data is not processed until 10 seconds after startup
 		  //开机10秒前不处理数据
-			return 0;	
+			//return 0;	
 			
 		//Fill the array with serial data
 		//串口数据填入数组
-    rxbuf[Count]=Usart_Receive;  
+        rxbuf[Count] = Usart_Receive;  
 		
 		//Ensure that the first data in the array is FRAME_HEADER
 		//确保数组第一个数据为FRAME_HEADER
-    if(Usart_Receive == FRAME_HEADER||Count>0) 
+        if(Usart_Receive == FRAME_HEADER || Count > 0) 
 			Count++; 
 		else 
-			Count=0;
-		
+			Count = 0;
+		//printf("%d", Count);
 		if (Count == 11) //Verify the length of the packet //验证数据包的长度
 		{   
-				Count=0; //Prepare for the serial port data to be refill into the array //为串口数据重新填入数组做准备
-				if(rxbuf[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
-				{			
-					for(i=0; i<9; i++)
-					{
-						//XOR bit check, used to detect data error
-						//异或位校验，用于检测数据是否出错
-						check=rxbuf[i]^check; 
-					}
-					if(check==rxbuf[9]) 
-						//XOR bit check successful
-					  //异或位校验成功
-					  error=0; 
-					
-					if(error==0)	 
-				  {		
-						float Vz;
-                        if(Usart1_ON_Flag==0)
-						{	
-							//Serial port 1 controls flag position 1, other flag position 0
-							//串口1控制标志位置1，其它标志位置0
-							//Usart_ON_Flag=1;
-							Usart1_ON_Flag=1;
-							APP_ON_Flag=0;
-							PS2_ON_Flag=0;
-							Remote_ON_Flag=0;
-							CAN_ON_Flag=0;
-						}		
-		
-						//Calculate the 3-axis target velocity from the serial data, which is divided into 8-bit high and 8-bit low units mm/s
-						//从串口数据求三轴目标速度，分高8位和低8位 单位mm/s
-						Move_X=XYZ_Target_Speed_transition(rxbuf[3],rxbuf[4]);
-						Move_Y=XYZ_Target_Speed_transition(rxbuf[5],rxbuf[6]);
-						Vz    =XYZ_Target_Speed_transition(rxbuf[7],rxbuf[8]);
-						if(Car_Mode==Akm_Car)
-						{
-							Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
-						}
-						else
-						{
-							Move_Z=XYZ_Target_Speed_transition(rxbuf[7],rxbuf[8]);
-						}		
-					}
-			  }
-		 }
+            // for(i = 0; i < 11; i++)
+            // {
+            //     printf("0x%X, ", rxbuf[i]);
+            // }
+
+            Count = 0; //Prepare for the serial port data to be refill into the array //为串口数据重新填入数组做准备
+
+            if(rxbuf[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
+            {			
+                if(rxbuf[9] == Check_Sum(9, 0, rxbuf))  //异或位校验成功
+                    error = 0; 
+
+                //printf("error=%d, ", error);
+
+                if(error == 0)	 
+                {		
+
+                    //if(rxbuf[2] == 0x00) //看接收地址是否为主机
+                    //{
+                        if(Usart1_ON_Flag == 0)
+                        {	
+                            //Serial port 1 controls flag position 1, other flag position 0
+                            //串口1控制标志位置1，其它标志位置0
+                            //Usart_ON_Flag=1;
+                            Usart1_ON_Flag = 1;
+                            APP_ON_Flag = 0;
+                            PS2_ON_Flag = 0;
+                            Remote_ON_Flag = 0;
+                            CAN_ON_Flag = 0;
+                        }		
+        
+                        //Calculate the 3-axis target velocity from the serial data, which is divided into 8-bit high and 8-bit low units mm/s
+                        //从串口数据求三轴目标速度，分高8位和低8位 单位mm/s
+                        Move_X = XYZ_Target_Speed_transition(rxbuf[3],rxbuf[4]);
+                        Move_Y = XYZ_Target_Speed_transition(rxbuf[5],rxbuf[6]);
+                        Move_Z = XYZ_Target_Speed_transition(rxbuf[7],rxbuf[8]);
+                        //printf("x=%f, y=%f, z=%f", Move_X, Move_Y, Move_Z);
+	
+                    //}
+                }
+                else
+                {
+                    Buzzer = 1;
+                }
+            }
+		}
 	}
-		return 0;	
+	return 0;	
 }
 /**************************************************************************
 Function: Refresh the OLED screen
@@ -673,9 +639,9 @@ int USART3_IRQHandler(void)
 				{
 					//Data exclusionary or bit check calculation, mode 0 is sent data check
 					//数据异或位校验计算，模式0是发送数据校验
-					if(Receive_Data.buffer[9] ==Check_Sum(9,0))	 
+					if(Receive_Data.buffer[9] ==Check_Sum(9,0,Receive_Data.buffer))	 
 				  {	
-						float Vz;						
+											
 						//All modes flag position 0, USART3 control mode
             //所有模式标志位置0，为Usart3控制模式						
 						PS2_ON_Flag=0;
@@ -688,15 +654,11 @@ int USART3_IRQHandler(void)
 						//从串口数据求三轴目标速度， 单位m/s
 						Move_X=XYZ_Target_Speed_transition(Receive_Data.buffer[3],Receive_Data.buffer[4]);
 						Move_Y=XYZ_Target_Speed_transition(Receive_Data.buffer[5],Receive_Data.buffer[6]);
-						Vz    =XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
-						if(Car_Mode==Akm_Car)
-						{
-							Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
-						}
-						else
-						{
-							Move_Z=XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
-						}				  }
+						
+
+
+						Move_Z=XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
+				}
 			}
 		}
 	} 
@@ -714,106 +676,69 @@ Output  : none
 int UART5_IRQHandler(void)
 {	
 	static u8 Count=0;
-	u8 Usart_Receive;
-
+    static u8 rxbuf[11];
+    u8 Usart_Receive;
+    int error = 1;
+    int i = 0;
 	if(USART_GetITStatus(UART5, USART_IT_RXNE) != RESET) //Check if data is received //判断是否接收到数据
 	{
 		Usart_Receive = USART_ReceiveData(UART5);//Read the data //读取数据
-		if(Time_count<CONTROL_DELAY)
+
+		if(Time_count < CONTROL_DELAY)
 			// Data is not processed until 10 seconds after startup
 		  //开机10秒前不处理数据
-		  return 0;	
+		    return 0;	
 		
 		//Fill the array with serial data
 		//串口数据填入数组
-    Receive_Data.buffer[Count]=Usart_Receive;
+        rxbuf[Count] = Usart_Receive;
 		
 		// Ensure that the first data in the array is FRAME_HEADER
 		//确保数组第一个数据为FRAME_HEADER
-		if(Usart_Receive == FRAME_HEADER||Count>0) 
+		if(Usart_Receive == FRAME_HEADER || Count > 0) 
 			Count++; 
 		else 
 			Count=0;
 		
 		if (Count == 11) //Verify the length of the packet //验证数据包的长度
 		{   
-				Count=0; //Prepare for the serial port data to be refill into the array //为串口数据重新填入数组做准备
-				if(Receive_Data.buffer[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
-				{
-					//Data exclusionary or bit check calculation, mode 0 is sent data check
-					//数据异或位校验计算，模式0是发送数据校验
-					if(Receive_Data.buffer[9] ==Check_Sum(9,0))	 
-				  {	
-						float Vz;						
-						//All modes flag position 0, USART3 control mode
-            //所有模式标志位置0，为Usart5控制模式						
-						PS2_ON_Flag=0;
-						Remote_ON_Flag=0;
-						APP_ON_Flag=0;
-						CAN_ON_Flag=0;
-						Usart5_ON_Flag=0;
-						//Calculate the target speed of three axis from serial data, unit m/s
-						//从串口数据求三轴目标速度， 单位m/s
-						Move_X=XYZ_Target_Speed_transition(Receive_Data.buffer[3],Receive_Data.buffer[4]);
-						Move_Y=XYZ_Target_Speed_transition(Receive_Data.buffer[5],Receive_Data.buffer[6]);
-						Vz    =XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
-						if(Car_Mode==Akm_Car)
-						{
-							Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
-						}
-						else
-						{
-							Move_Z=XYZ_Target_Speed_transition(Receive_Data.buffer[7],Receive_Data.buffer[8]);
-						}				  }
-			}
+            Count = 0; //Prepare for the serial port data to be refill into the array //为串口数据重新填入数组做准备
+
+            if(rxbuf[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
+            {
+                //Data exclusionary or bit check calculation, mode 0 is sent data check
+                //数据异或位校验计算，模式0是发送数据校验
+                if(rxbuf[9] == Check_Sum(9, 0, rxbuf))	
+                    error = 0;
+
+                if(error == 0) 
+                {	
+                    // for(i = 0; i < 11; i++)
+                    // {
+                    //     printf("0x%X, ", rxbuf[i]);
+                    // }
+
+                    if(rxbuf[1] == 0x01 && rxbuf[2] == 0x00)
+                    {
+                        sensor_flag = rxbuf[3];
+                        QR_code[0] = rxbuf[5];
+                        QR_code[1] = rxbuf[6];
+                        QR_code[2] = rxbuf[7];
+                        next_location = rxbuf[8];
+                    }
+                    else
+                    {
+                        Buzzer = 1;
+                    }
+                }
+                else
+                {
+                    Buzzer = 1;
+                }
+            }
 		}
 	} 
   return 0;	
-}
-/**************************************************************************
-Function: After the top 8 and low 8 figures are integrated into a short type data, the unit reduction is converted
-Input   : 8 bits high, 8 bits low
-Output  : The target velocity of the robot on the X/Y/Z axis
-函数功能：将上位机发过来目标前进速度Vx、目标角速度Vz，转换为阿克曼小车的右前轮转角
-入口参数：目标前进速度Vx、目标角速度Vz，单位：m/s，rad/s
-返回  值：阿克曼小车的右前轮转角，单位：rad
-**************************************************************************/
-float Vz_to_Akm_Angle(float Vx, float Vz)
-{
-	float R, AngleR, Min_Turn_Radius;
-	//float AngleL;
-	
-	//Ackermann car needs to set minimum turning radius
-	//If the target speed requires a turn radius less than the minimum turn radius,
-	//This will greatly improve the friction force of the car, which will seriously affect the control effect
-	//阿克曼小车需要设置最小转弯半径
-	//如果目标速度要求的转弯半径小于最小转弯半径，
-	//会导致小车运动摩擦力大大提高，严重影响控制效果
-	Min_Turn_Radius=MINI_AKM_MIN_TURN_RADIUS;
-	
-	if(Vz!=0 && Vx!=0)
-	{
-		//If the target speed requires a turn radius less than the minimum turn radius
-		//如果目标速度要求的转弯半径小于最小转弯半径
-		if(float_abs(Vx/Vz)<=Min_Turn_Radius)
-		{
-			//Reduce the target angular velocity and increase the turning radius to the minimum turning radius in conjunction with the forward speed
-			//降低目标角速度，配合前进速度，提高转弯半径到最小转弯半径
-			if(Vz>0)
-				Vz= float_abs(Vx)/(Min_Turn_Radius);
-			else	
-				Vz=-float_abs(Vx)/(Min_Turn_Radius);	
-		}		
-		R=Vx/Vz;
-		//AngleL=atan(Axle_spacing/(R-0.5*Wheel_spacing));
-		AngleR=atan(Axle_spacing/(R+0.5f*Wheel_spacing));
-	}
-	else
-	{
-		AngleR=0;
-	}
-	
-	return AngleR;
 }
 /**************************************************************************
 Function: After the top 8 and low 8 figures are integrated into a short type data, the unit reduction is converted
@@ -896,25 +821,26 @@ Output  : Check result
 入口参数：Count_Number：校验的前几位数；Mode：0-对接收数据进行校验，1-对发送数据进行校验
 返回  值：校验结果
 **************************************************************************/
-u8 Check_Sum(unsigned char Count_Number,unsigned char Mode)
+u8 Check_Sum(unsigned char Count_Number,unsigned char Mode, uint8_t *buf)
 {
-	unsigned char check_sum=0,k;
+	unsigned char check_sum = 0,k;
 	
 	//Validate the data to be sent
 	//对要发送的数据进行校验
-	if(Mode==1)
-	for(k=0;k<Count_Number;k++)
-	{
-	check_sum=check_sum^Send_Data.buffer[k];
-	}
+	if(Mode == 1)
+        for(k = 0; k < Count_Number; k++)
+        {
+            check_sum = check_sum ^ buf[k];
+        }
 	
 	//Verify the data received
 	//对接收到的数据进行校验
-	if(Mode==0)
-	for(k=0;k<Count_Number;k++)
-	{
-	check_sum=check_sum^Receive_Data.buffer[k];
-	}
+	if(Mode == 0)
+        for(k = 0; k < Count_Number; k++)
+        {
+            check_sum = check_sum ^ buf[k];
+        }
+
 	return check_sum;
 }
 

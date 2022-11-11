@@ -7,7 +7,10 @@ __IO static uint16_t Running = 0;
 
 Action dst[5];
 
-Encoder OriginalEncoder; //Encoder raw data //编码器原始数据     
+Encoder OriginalEncoder; //Encoder raw data //编码器原始数据    
+
+extern uint8_t sensor_flag;
+extern uint8_t color;
 
 /**************************************************************************
 Function: FreerTOS task, core motion control task
@@ -47,6 +50,7 @@ void Balance_task(void *pvParameters)
         if(flag > 0) {
             mode++;
             flag = 0;
+            sensor_flag = 1; // 按键强行启动
         }
         
         cheak_time();
@@ -172,6 +176,7 @@ void cheak_time(void) {
                 {
                     dst[Action_cnt].start_time = Time_count;;
                     Running = 1;
+                    sensor_flag = 0;
                 }
             }
             else
@@ -180,6 +185,7 @@ void cheak_time(void) {
                 {
                     Running = 0;
                     Action_cnt++;  
+                    USART5_SENDOK();
                     time = Time_count;
                 }
             }

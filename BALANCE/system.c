@@ -152,6 +152,8 @@ void systemInit(void)
 	//串口5初始化，通信波特率115200，可用于与ROS端通信
 	uart5_init(115200);
 
+    USART5_SENDOK();//先发一次，因为第一次数据异常
+
 	//ADC pin initialization, used to read the battery voltage and potentiometer gear, 
 	//potentiometer gear determines the car after the boot of the car model
 	//ADC引脚初始化，用于读取电池电压与电位器档位，电位器档位决定小车开机后的小车适配型号
@@ -160,7 +162,7 @@ void systemInit(void)
 	
 	//Initialize the CAN communication interface
   //CAN通信接口初始化
-	CAN1_Mode_Init(1,7,6,3,0); 
+	//CAN1_Mode_Init(1,7,6,3,0); 
 	
   //According to the tap position of the potentiometer, determine which type of car needs to be matched, 
   //and then initialize the corresponding parameters	
