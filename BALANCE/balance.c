@@ -185,7 +185,13 @@ void cheak_time(void) {
                 {
                     Running = 0;
                     Action_cnt++;  
+                    
+                    taskENTER_CRITICAL(); //Enter the critical area //进入临界区
+                    
                     USART5_SENDOK();
+                    
+                    taskEXIT_CRITICAL();            //Exit the critical section//退出临界区
+
                     time = Time_count;
                 }
             }

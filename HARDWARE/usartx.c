@@ -164,7 +164,7 @@ Output  : none
 **************************************************************************/
 void USART5_SENDOK(void)
 {
-    static unsigned char location = 0x01;
+    static unsigned char location = 0x00;
     unsigned char i = 0;
     u8 sendbuf[11] = {0};
 
@@ -382,7 +382,7 @@ void uart5_init(u32 bound)
   //UsartNVIC configuration //UsartNVIC配置
   NVIC_InitStructure.NVIC_IRQChannel = UART5_IRQn;
 	//Preempt priority //抢占优先级
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=2 ;
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority=1 ;
 	//Preempt priority //抢占优先级
 	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;		
 	//Enable the IRQ channel //IRQ通道使能	
@@ -684,42 +684,46 @@ int UART5_IRQHandler(void)
 	{
 		Usart_Receive = USART_ReceiveData(UART5);//Read the data //读取数据
 
-		if(Time_count < CONTROL_DELAY)
-			// Data is not processed until 10 seconds after startup
+		//if(Time_count < CONTROL_DELAY)
+			
 		  //开机10秒前不处理数据
-		    return 0;	
+		    //return 0;	
 		
 		//Fill the array with serial data
 		//串口数据填入数组
         rxbuf[Count] = Usart_Receive;
+		//printf("0x%X, ", Usart_Receive);
 		
-		// Ensure that the first data in the array is FRAME_HEADER
 		//确保数组第一个数据为FRAME_HEADER
 		if(Usart_Receive == FRAME_HEADER || Count > 0) 
 			Count++; 
 		else 
 			Count=0;
-		
-		if (Count == 11) //Verify the length of the packet //验证数据包的长度
-		{   
-            Count = 0; //Prepare for the serial port data to be refill into the array //为串口数据重新填入数组做准备
+		//printf("%d, ", Count); 忠告：不要往中断函数里放太多printf
+        
+		if (Count == 11)  //验证数据包的长度
+		{    
+            
+            Buzzer = 1;
+            Count = 0; //为串口数据重新填入数组做准备
 
             if(rxbuf[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
             {
-                //Data exclusionary or bit check calculation, mode 0 is sent data check
+                
                 //数据异或位校验计算，模式0是发送数据校验
                 if(rxbuf[9] == Check_Sum(9, 0, rxbuf))	
                     error = 0;
 
                 if(error == 0) 
                 {	
-                    // for(i = 0; i < 11; i++)
-                    // {
-                    //     printf("0x%X, ", rxbuf[i]);
-                    // }
+                    for(i = 0; i < 11; i++)
+                    {
+                        printf("0x%X, ", rxbuf[i]);
+                    }
 
                     if(rxbuf[1] == 0x01 && rxbuf[2] == 0x00)
                     {
+
                         sensor_flag = rxbuf[3];
                         QR_code[0] = rxbuf[5];
                         QR_code[1] = rxbuf[6];
