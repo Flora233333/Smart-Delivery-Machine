@@ -28,7 +28,7 @@ void Balance_task(void *pvParameters)
 { 
 	u32 lastWakeTime = getSysTickCnt();
 
-    Action_init(4);
+    Action_init(3);
     
     Running = 0;
     while(1)
@@ -126,7 +126,7 @@ void Action_init(uint8_t num) {
         }
 
         dst[0].enable = 1;
-        dst[0].distance = 0.5;
+        dst[0].distance = 0.7;
         dst[0].x_speed = 0.4;
         dst[0].y_speed = 0;
         dst[0].z_speed = 0;
@@ -137,21 +137,14 @@ void Action_init(uint8_t num) {
         dst[1].x_speed = 0;
         dst[1].y_speed = 0;
         dst[1].z_speed = 2;
-        dst[1].need_time = (int)((dst[1].distance / dst[1].z_speed) * 100);
+        dst[1].need_time = (int)((dst [1].distance / dst[1].z_speed) * 100);
 
         dst[2].enable = 1;
-        dst[2].distance = 1.54 * 2;
-        dst[2].x_speed = 0;
+        dst[2].distance = 1;
+        dst[2].x_speed = 0.4;
         dst[2].y_speed = 0;
-        dst[2].z_speed = 2;
-        dst[2].need_time = (int)((dst[2].distance / dst[2].z_speed) * 100);
-
-        dst[3].enable = 1;
-        dst[3].distance = 0.5;
-        dst[3].x_speed = 0;
-        dst[3].y_speed = 0.4;
-        dst[3].z_speed = 0;
-        dst[3].need_time = (int)((dst[3].distance / dst[3].y_speed) * 100);
+        dst[2].z_speed = 0;
+        dst[2].need_time = (int)((dst[2].distance / dst[2].x_speed) * 100);
         flag++;
     }
     else
@@ -164,7 +157,7 @@ void Action_init(uint8_t num) {
 返回  值：无
 **************************************************************************/
 void cheak_time(void) {
-    static int32_t time = 0;
+    //static int32_t time = 0;
 
     if(mode == 1) 
     {
@@ -172,11 +165,11 @@ void cheak_time(void) {
         {
             if(Running == 0)
             {
-                if(Time_count - time >= wait) 
+                if(sensor_flag >= 1)
                 {
                     dst[Action_cnt].start_time = Time_count;;
                     Running = 1;
-                    sensor_flag = 0;
+                    sensor_flag--;
                 }
             }
             else
@@ -192,7 +185,7 @@ void cheak_time(void) {
                     
                     taskEXIT_CRITICAL();            //Exit the critical section//退出临界区
 
-                    time = Time_count;
+                    //time = Time_count;
                 }
             }
         }
@@ -377,7 +370,7 @@ int Incremental_PI_A (float Encoder,float Target)
 { 	
 	 static float Bias,Pwm,Last_bias;
 	 Bias = Target - Encoder; //Calculate the deviation //计算偏差
-	 Pwm+=Velocity_KP*(Bias-Last_bias)+1800*Bias; 
+	 Pwm+=Velocity_KP*(Bias-Last_bias)+1850*Bias; 
 	 if(Pwm>16700)Pwm=16700;
 	 if(Pwm<-16700)Pwm=-16700;
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
@@ -387,7 +380,7 @@ int Incremental_PI_B (float Encoder,float Target)
 {  
 	 static float Bias, Pwm, Last_bias;
 	 Bias = Target - Encoder; //Calculate the deviation //计算偏差
-	 Pwm += Velocity_KP * (Bias - Last_bias) + 1600 * Bias;  
+	 Pwm += Velocity_KP * (Bias - Last_bias) + 1650 * Bias;  
 	 if(Pwm > 16700) Pwm = 16700;
 	 if(Pwm < -16700) Pwm = -16700;
 	 Last_bias = Bias; //Save the last deviation //保存上一次偏差 
@@ -397,7 +390,7 @@ int Incremental_PI_C (float Encoder,float Target)
 {  
 	 static float Bias,Pwm,Last_bias;
 	 Bias=Target-Encoder; //Calculate the deviation //计算偏差
-	 Pwm+=Velocity_KP*(Bias-Last_bias)+1500*Bias; 
+	 Pwm+=Velocity_KP*(Bias-Last_bias)+1540*Bias; 
 	 if(Pwm>16700)Pwm=16700;
 	 if(Pwm<-16700)Pwm=-16700;
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 
@@ -407,7 +400,7 @@ int Incremental_PI_D (float Encoder,float Target)
 {  
 	 static float Bias,Pwm,Last_bias;
 	 Bias=Target-Encoder; //Calculate the deviation //计算偏差
-	 Pwm+=Velocity_KP*(Bias-Last_bias)+Velocity_KI*Bias;  
+	 Pwm+=Velocity_KP*(Bias-Last_bias)+1650*Bias;  
 	 if(Pwm>16700)Pwm=16700;
 	 if(Pwm<-16700)Pwm=-16700;
 	 Last_bias=Bias; //Save the last deviation //保存上一次偏差 

@@ -416,7 +416,7 @@ int USART1_IRQHandler(void)
 	{
 		u8 Usart_Receive;
 		static u8 Count;
-		static u8 rxbuf[11];
+		static u8 rxbuf[11] = {0,0,0,0,0,0,0,0,0,0,0};
 		int error = 1;
 		//int i = 0;
 
@@ -676,7 +676,7 @@ Output  : none
 int UART5_IRQHandler(void)
 {	
 	static u8 Count=0;
-    static u8 rxbuf[11];
+    static u8 rxbuf[11] = {0,0,0,0,0,0,0,0,0,0,0};
     u8 Usart_Receive;
     int error = 1;
     int i = 0;
@@ -704,7 +704,6 @@ int UART5_IRQHandler(void)
 		if (Count == 11)  //验证数据包的长度
 		{    
             
-            Buzzer = 1;
             Count = 0; //为串口数据重新填入数组做准备
 
             if(rxbuf[10] == FRAME_TAIL) //Verify the frame tail of the packet //验证数据包的帧尾
@@ -719,7 +718,7 @@ int UART5_IRQHandler(void)
                     for(i = 0; i < 11; i++)
                     {
                         printf("0x%X, ", rxbuf[i]);
-                    }
+                    }  
 
                     if(rxbuf[1] == 0x01 && rxbuf[2] == 0x00)
                     {
@@ -814,7 +813,9 @@ Output  : none
 **************************************************************************/
 void usart5_send(u8 data)
 {
+   
 	UART5->DR = data;
+    //USART_ClearFlag(UART5, USART_IT_TC);
 	while((UART5->SR&0x40)==0);	
 }
 /**************************************************************************
